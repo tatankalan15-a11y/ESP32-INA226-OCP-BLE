@@ -2,19 +2,18 @@ name: Build APK
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
     paths:
       - 'flutter_app/**'
       - '.github/workflows/build-apk.yml'
+
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
-    defaults:
-      run:
-        working-directory: flutter_app
 
     steps:
       - name: Checkout repository
@@ -25,6 +24,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -33,50 +33,91 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
+      - name: Install Flutter dependencies
+        working-directory: flutter_app
         run: flutter pub get
 
-      - name: Ensure Android project exists and is complete
+      - name: Ensure Android project
+        working-directory: flutter_app
         run: |
-          if [ ! -f android/settings.gradle ] || [ ! -f android/gradle.properties ]; then
+          if [ ! -f android/settings.gradle ] ||
+             [ ! -f android/gradle.properties ] ||
+             [ ! -f android/gradlew ] ||
+             [ ! -f android/app/build.gradle ]; then
+            echo "Android project belum lengkap. Membuat ulang..."
             rm -rf android
             flutter create --platforms=android --org com.smartpsu .
           fi
+
           flutter pub get
 
-      - name: Add Bluetooth permissions to AndroidManifest.xml
+      - name: Make Gradle wrapper executable
+        working-directory: flutter_app
+        run: |
+          test -f android/gradlew
+          chmod +x android/gradlew
+          echo "Gradle wrapper siap:"
+          ls -l android/gradlew
+
+      - name: Add Bluetooth permissions
+        working-directory: flutter_app
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          if not p.exists():
-              raise FileNotFoundError(f"AndroidManifest.xml not found: {p}")
+          path = Path("android/app/src/main/AndroidManifest.xml")
 
-          s = p.read_text()
+          if not path.exists():
+              raise FileNotFoundError(
+                  "File AndroidManifest.xml tidak ditemukan"
+              )
 
-          if "BLUETOOTH_SCAN" not in s:
-              permissions = '''
-    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-'''
-              s = s.replace('</manifest>', permissions + '\n</manifest>', 1)
-              p.write_text(s)
+          content = path.read_text()
 
-          print("Bluetooth permissions ensured.")
+          permissions = """
+              <uses-permission
+                  android:name="android.permission.BLUETOOTH"
+                  android:maxSdkVersion="30" />
+
+              <uses-permission
+                  android:name="android.permission.BLUETOOTH_ADMIN"
+                  android:maxSdkVersion="30" />
+
+              <uses-permission
+                  android:name="android.permission.ACCESS_FINE_LOCATION"
+                  android:maxSdkVersion="30" />
+
+              <uses-permission
+                  android:name="android.permission.BLUETOOTH_SCAN"
+                  android:usesPermissionFlags="neverForLocation" />
+
+              <uses-permission
+                  android:name="android.permission.BLUETOOTH_CONNECT" />
+          """
+
+          if "android.permission.BLUETOOTH_SCAN" not in content:
+              content = content.replace(
+                  "</manifest>",
+                  permissions + "\n</manifest>",
+                  1
+              )
+              path.write_text(content)
+
+          print("Permission Bluetooth sudah tersedia.")
           PY
 
-      - name: Validate Android Gradle files
+      - name: Validate Android files
+        working-directory: flutter_app
         run: |
           test -f android/settings.gradle
           test -f android/gradle.properties
+          test -f android/gradlew
           test -f android/app/build.gradle
-          echo "Android project ready."
+          test -f android/app/src/main/AndroidManifest.xml
+          echo "Semua file Android tersedia."
 
       - name: Build release APK
+        working-directory: flutter_app
         run: flutter build apk --release
 
       - name: Upload APK artifact
@@ -85,3 +126,4 @@ jobs:
           name: smart-psu-hp-doctor-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
+          retention-days: 30
