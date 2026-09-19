@@ -3,7 +3,7 @@ pluginManagement {
         def properties = new Properties()
         file("local.properties").withInputStream { properties.load(it) }
         def flutterSdkPath = properties.getProperty("flutter.sdk")
-        assert flutterSdkPath != null, "flutter.sdk belum dikonfigurasi di local.properties"
+        assert flutterSdkPath != null : "flutter.sdk belum dikonfigurasi"
         return flutterSdkPath
     }()
 
