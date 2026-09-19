@@ -17,7 +17,7 @@ jobs:
         working-directory: flutter_app
 
     steps:
-      - name: Checkout kode
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java
@@ -33,35 +33,55 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependency
+      - name: Install dependencies
         run: flutter pub get
 
-      - name: Generate folder Android
+      - name: Ensure Android project exists and is complete
         run: |
-          if [ ! -d "android" ]; then
+          if [ ! -f android/settings.gradle ] || [ ! -f android/gradle.properties ]; then
+            rm -rf android
             flutter create --platforms=android --org com.smartpsu .
           fi
           flutter pub get
 
-      - name: Tambahkan permission Bluetooth
+      - name: Add Bluetooth permissions to AndroidManifest.xml
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path('android/app/src/main/AndroidManifest.xml')
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          if not p.exists():
+              raise FileNotFoundError(f"AndroidManifest.xml not found: {p}")
+
           s = p.read_text()
 
-          if 'BLUETOOTH_SCAN' not in s:
-              permissions = '''\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'''
-              s = s.replace('>', '>' + permissions, 1)
+          if "BLUETOOTH_SCAN" not in s:
+              permissions = '''
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+'''
+              s = s.replace('</manifest>', permissions + '\n</manifest>', 1)
               p.write_text(s)
+
+          print("Bluetooth permissions ensured.")
           PY
 
-      - name: Build APK release
+      - name: Validate Android Gradle files
+        run: |
+          test -f android/settings.gradle
+          test -f android/gradle.properties
+          test -f android/app/build.gradle
+          echo "Android project ready."
+
+      - name: Build release APK
         run: flutter build apk --release
 
-      - name: Upload artifact
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: smart-psu-hp-doctor-apk
           path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
