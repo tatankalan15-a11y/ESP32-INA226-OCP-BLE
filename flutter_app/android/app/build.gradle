@@ -5,25 +5,37 @@ plugins {
 }
 
 android {
-    namespace = "com.smartpsu.smart_psu_hp_doctor"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    namespace "com.smartpsu.smart_psu_hp_doctor"
+
+    // Harus eksplisit agar flutter_blue_plus dapat dikonfigurasi
+    compileSdk 35
+
+    ndkVersion flutter.ndkVersion
 
     defaultConfig {
-        applicationId = "com.smartpsu.smart_psu_hp_doctor"
-        minSdk = 21
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        applicationId "com.smartpsu.smart_psu_hp_doctor"
+        minSdk 21
+        targetSdk 35
+        versionCode flutter.versionCode
+        versionName flutter.versionName
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.debug
         }
     }
 }
 
 flutter {
-    source = "../.."
+    source "../.."
 }
