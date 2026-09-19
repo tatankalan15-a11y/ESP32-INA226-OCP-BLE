@@ -1,1 +1,67 @@
+name: Build APK
 
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'flutter_app/**'
+      - '.github/workflows/build-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: flutter_app
+
+    steps:
+      - name: Checkout kode
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: stable
+          cache: true
+
+      - name: Install dependency
+        run: flutter pub get
+
+      - name: Generate folder Android
+        run: |
+          if [ ! -d "android" ]; then
+            flutter create --platforms=android --org com.smartpsu .
+          fi
+          flutter pub get
+
+      - name: Tambahkan permission Bluetooth
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+
+          if 'BLUETOOTH_SCAN' not in s:
+              permissions = '''\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />\n'''
+              s = s.replace('>', '>' + permissions, 1)
+              p.write_text(s)
+          PY
+
+      - name: Build APK release
+        run: flutter build apk --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-psu-hp-doctor-apk
+          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
