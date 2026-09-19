@@ -31,22 +31,21 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install Flutter dependencies
+      - name: Install dependencies
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Ensure Android project exists and is complete
+      - name: Ensure Android project
         working-directory: flutter_app
         run: |
           if [ ! -f android/settings.gradle ] || \
              [ ! -f android/gradle.properties ] || \
              [ ! -f android/gradlew ] || \
              [ ! -f android/app/build.gradle ]; then
-            echo "Android project is incomplete. Re-creating..."
+            echo "Android project belum lengkap. Re-create..."
             rm -rf android
             flutter create --platforms=android --org com.smartpsu .
           fi
-
           flutter pub get
 
       - name: Make gradlew executable
@@ -61,38 +60,20 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-          if not manifest.exists():
-              raise FileNotFoundError("AndroidManifest.xml tidak ditemukan")
-
-          content = manifest.read_text()
-
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          if not p.exists():
+              raise FileNotFoundError("AndroidManifest.xml not found")
+          content = p.read_text()
           permissions = '''
-    <uses-permission
-        android:name="android.permission.BLUETOOTH"
-        android:maxSdkVersion="30" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_ADMIN"
-        android:maxSdkVersion="30" />
-
-    <uses-permission
-        android:name="android.permission.ACCESS_FINE_LOCATION"
-        android:maxSdkVersion="30" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_SCAN"
-        android:usesPermissionFlags="neverForLocation" />
-
-    <uses-permission
-        android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 '''
-
           if "android.permission.BLUETOOTH_SCAN" not in content:
               content = content.replace("</manifest>", permissions + "\n</manifest>", 1)
-              manifest.write_text(content)
-
+              p.write_text(content)
           print("Bluetooth permissions ensured.")
           PY
 
@@ -105,15 +86,6 @@ jobs:
           test -f android/app/build.gradle
           test -f android/app/src/main/AndroidManifest.xml
           echo "Android config ok."
-
-      - name: Show Gradle config
-        working-directory: flutter_app
-        run: |
-          echo "compileSdk in app gradle:"
-          grep -n "compileSdk" android/app/build.gradle || true
-          echo ""
-          echo "minSdk / targetSdk:"
-          grep -nE "minSdk|targetSdk" android/app/build.gradle || true
 
       - name: Clean Flutter project
         working-directory: flutter_app
