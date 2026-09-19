@@ -8,7 +8,6 @@ on:
     paths:
       - 'flutter_app/**'
       - '.github/workflows/build-apk.yml'
-
   workflow_dispatch:
 
 jobs:
@@ -24,7 +23,6 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-          cache: gradle
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -37,26 +35,25 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Ensure Android project
+      - name: Ensure Android project exists and is complete
         working-directory: flutter_app
         run: |
-          if [ ! -f android/settings.gradle ] ||
-             [ ! -f android/gradle.properties ] ||
-             [ ! -f android/gradlew ] ||
+          if [ ! -f android/settings.gradle ] || \
+             [ ! -f android/gradle.properties ] || \
+             [ ! -f android/gradlew ] || \
              [ ! -f android/app/build.gradle ]; then
-            echo "Android project belum lengkap. Membuat ulang..."
+            echo "Android project is incomplete. Re-creating..."
             rm -rf android
             flutter create --platforms=android --org com.smartpsu .
           fi
 
           flutter pub get
 
-      - name: Make Gradle wrapper executable
+      - name: Make gradlew executable
         working-directory: flutter_app
         run: |
           test -f android/gradlew
           chmod +x android/gradlew
-          echo "Gradle wrapper siap:"
           ls -l android/gradlew
 
       - name: Add Bluetooth permissions
@@ -65,48 +62,41 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path("android/app/src/main/AndroidManifest.xml")
+          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          if not manifest.exists():
+              raise FileNotFoundError("AndroidManifest.xml tidak ditemukan")
 
-          if not path.exists():
-              raise FileNotFoundError(
-                  "File AndroidManifest.xml tidak ditemukan"
-              )
+          content = manifest.read_text()
 
-          content = path.read_text()
+          permissions = '''
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
 
-          permissions = """
-              <uses-permission
-                  android:name="android.permission.BLUETOOTH"
-                  android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
 
-              <uses-permission
-                  android:name="android.permission.BLUETOOTH_ADMIN"
-                  android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30" />
 
-              <uses-permission
-                  android:name="android.permission.ACCESS_FINE_LOCATION"
-                  android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
 
-              <uses-permission
-                  android:name="android.permission.BLUETOOTH_SCAN"
-                  android:usesPermissionFlags="neverForLocation" />
-
-              <uses-permission
-                  android:name="android.permission.BLUETOOTH_CONNECT" />
-          """
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_CONNECT" />
+'''
 
           if "android.permission.BLUETOOTH_SCAN" not in content:
-              content = content.replace(
-                  "</manifest>",
-                  permissions + "\n</manifest>",
-                  1
-              )
-              path.write_text(content)
+              content = content.replace("</manifest>", permissions + "\n</manifest>", 1)
+              manifest.write_text(content)
 
-          print("Permission Bluetooth sudah tersedia.")
+          print("Bluetooth permissions ensured.")
           PY
 
-      - name: Validate Android files
+      - name: Validate Android config
         working-directory: flutter_app
         run: |
           test -f android/settings.gradle
@@ -114,11 +104,24 @@ jobs:
           test -f android/gradlew
           test -f android/app/build.gradle
           test -f android/app/src/main/AndroidManifest.xml
-          echo "Semua file Android tersedia."
+          echo "Android config ok."
+
+      - name: Show Gradle config
+        working-directory: flutter_app
+        run: |
+          echo "compileSdk in app gradle:"
+          grep -n "compileSdk" android/app/build.gradle || true
+          echo ""
+          echo "minSdk / targetSdk:"
+          grep -nE "minSdk|targetSdk" android/app/build.gradle || true
+
+      - name: Clean Flutter project
+        working-directory: flutter_app
+        run: flutter clean
 
       - name: Build release APK
         working-directory: flutter_app
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
