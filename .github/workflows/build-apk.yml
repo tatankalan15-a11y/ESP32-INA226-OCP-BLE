@@ -33,91 +33,29 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Ensure Android project
+      - name: Verify Android project exists
         working-directory: flutter_app
+        shell: bash
         run: |
-          set -e
-          if [ ! -f android/settings.gradle ] || [ ! -f android/gradlew ] || [ ! -f android/app/build.gradle ]; then
-            rm -rf android
-            flutter create --platforms=android --org com.smartpsu .
-          fi
+          set -euxo pipefail
+          test -d android
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
+          test -f android/gradlew
           chmod +x android/gradlew
-
-      - name: Configure Android SDK
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path("android/app/build.gradle")
-          s = p.read_text()
-
-          def setv(text, key, value):
-              pattern = rf'\b{key}(?:Version)?\s+[^\n]+'
-              if re.search(pattern, text):
-                  return re.sub(pattern, f'{key} {value}', text, count=1)
-              if key == 'compileSdk':
-                  return text.replace('android {', f'android {{\n    compileSdk {value}', 1)
-              return text.replace('defaultConfig {', f'defaultConfig {{\n        {key} {value}', 1)
-
-          s = setv(s, 'compileSdk', 35)
-          s = setv(s, 'minSdk', 21)
-          s = setv(s, 'targetSdk', 35)
-          p.write_text(s)
-          PY
-
-      - name: Bluetooth permissions
-        working-directory: flutter_app
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("android/app/src/main/AndroidManifest.xml")
-          s = p.read_text()
-          perms = '''    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
-              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
-              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
-              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
-          '''
-          if 'android.permission.BLUETOOTH_SCAN' not in s:
-              s = s.replace('</manifest>', perms + '</manifest>', 1)
-              p.write_text(s)
-          PY
 
       - name: Get dependencies
         working-directory: flutter_app
         run: flutter pub get
 
-      - name: Show Flutter and dependency versions
+      - name: Show dependency tree
         working-directory: flutter_app
-        run: |
-          flutter --version
-          flutter pub deps
+        run: flutter pub deps
 
       - name: Clean
         working-directory: flutter_app
         run: flutter clean
 
-      - name: Get dependencies again
-        working-directory: flutter_app
-        run: flutter pub get
-
       - name: Build release APK
         working-directory: flutter_app
         run: flutter build apk --release --verbose
-
-      - name: Verify APK
-        working-directory: flutter_app
-        run: |
-          test -f build/app/outputs/flutter-apk/app-release.apk
-          ls -lh build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: smart-psu-hp-doctor-apk
-          path: flutter_app/build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error
-          retention-days: 30
