@@ -10,7 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  flutter_blue_plus: ^1.32.12
+  flutter_blue_plus: 1.35.10
   fl_chart: ^0.68.0
   permission_handler: ^11.3.1
 
