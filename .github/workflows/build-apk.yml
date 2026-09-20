@@ -14,6 +14,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,7 +29,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.24.0"
+          flutter-version: "3.29.3"
           channel: stable
           cache: true
 
@@ -48,15 +49,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import re
+
           p = Path("android/app/build.gradle")
           s = p.read_text()
-          def setv(s, key, value):
-              pat = rf'\b{key}(?:Version)?\s+[^\n]+'
-              if re.search(pat, s):
-                  return re.sub(pat, f'{key} {value}', s, count=1)
+
+          def setv(text, key, value):
+              pattern = rf'\b{key}(?:Version)?\s+[^\n]+'
+              if re.search(pattern, text):
+                  return re.sub(pattern, f'{key} {value}', text, count=1)
               if key == 'compileSdk':
-                  return s.replace('android {', f'android {{\n    compileSdk {value}', 1)
-              return s.replace('defaultConfig {', f'defaultConfig {{\n        {key} {value}', 1)
+                  return text.replace('android {', f'android {{\n    compileSdk {value}', 1)
+              return text.replace('defaultConfig {', f'defaultConfig {{\n        {key} {value}', 1)
+
           s = setv(s, 'compileSdk', 35)
           s = setv(s, 'minSdk', 21)
           s = setv(s, 'targetSdk', 35)
@@ -68,6 +72,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text()
           perms = '''    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -85,6 +90,12 @@ jobs:
         working-directory: flutter_app
         run: flutter pub get
 
+      - name: Show Flutter and dependency versions
+        working-directory: flutter_app
+        run: |
+          flutter --version
+          flutter pub deps
+
       - name: Clean
         working-directory: flutter_app
         run: flutter clean
@@ -95,7 +106,7 @@ jobs:
 
       - name: Build release APK
         working-directory: flutter_app
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Verify APK
         working-directory: flutter_app
