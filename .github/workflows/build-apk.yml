@@ -8,22 +8,40 @@ on:
     paths:
       - "flutter_app/**"
       - ".github/workflows/build-apk.yml"
+
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
+      # --------------------------------------------------
+      # CHECKOUT
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      # --------------------------------------------------
+      # JAVA 17
+      # --------------------------------------------------
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
+      # --------------------------------------------------
+      # FLUTTER
+      # --------------------------------------------------
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -31,101 +49,250 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install Flutter dependencies
+      # --------------------------------------------------
+      # CHECK FLUTTER PROJECT
+      # --------------------------------------------------
+      - name: Check Flutter project
         working-directory: flutter_app
-        run: flutter pub get
+        run: |
+          test -f pubspec.yaml
 
-      - name: Ensure Android project
+          flutter --version
+
+          flutter pub get
+
+      # --------------------------------------------------
+      # ENSURE ANDROID PROJECT
+      # --------------------------------------------------
+      - name: Ensure complete Android project
         working-directory: flutter_app
-        shell: bash
         run: |
           if [ ! -f android/settings.gradle ] || \
              [ ! -f android/gradle.properties ] || \
              [ ! -f android/gradlew ] || \
              [ ! -f android/app/build.gradle ]; then
-            echo "Android project belum lengkap. Membuat ulang..."
+
+            echo "Android project incomplete."
+            echo "Regenerating Android platform..."
+
             rm -rf android
-            flutter create --platforms=android --org com.smartpsu .
+
+            flutter create \
+              --platforms=android \
+              --org com.smartpsu \
+              .
+
           fi
 
-          flutter pub get
-
-      - name: Make Gradle wrapper executable
-        working-directory: flutter_app
-        shell: bash
-        run: |
           test -f android/gradlew
-          chmod +x android/gradlew
-          ls -l android/gradlew
+          test -f android/settings.gradle
+          test -f android/app/build.gradle
 
+          chmod +x android/gradlew
+
+      # --------------------------------------------------
+      # FORCE ANDROID SDK CONFIGURATION
+      # --------------------------------------------------
+      - name: Configure Android Gradle
+        working-directory: flutter_app
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("android/app/build.gradle")
+
+          if not path.exists():
+              raise SystemExit(
+                  "ERROR: android/app/build.gradle tidak ditemukan"
+              )
+
+          content = path.read_text()
+
+          # compileSdk
+          if re.search(r'compileSdk(?:Version)?\s+', content):
+              content = re.sub(
+                  r'compileSdk(?:Version)?\s+[^\n]+',
+                  'compileSdk 35',
+                  content,
+                  count=1
+              )
+          else:
+              content = content.replace(
+                  'android {',
+                  'android {\n    compileSdk 35',
+                  1
+              )
+
+          # minSdk
+          if re.search(r'\bminSdk(?:Version)?\s+', content):
+              content = re.sub(
+                  r'\bminSdk(?:Version)?\s+[^\n]+',
+                  'minSdk 21',
+                  content,
+                  count=1
+              )
+          else:
+              content = content.replace(
+                  'defaultConfig {',
+                  'defaultConfig {\n        minSdk 21',
+                  1
+              )
+
+          # targetSdk
+          if re.search(r'\btargetSdk(?:Version)?\s+', content):
+              content = re.sub(
+                  r'\btargetSdk(?:Version)?\s+[^\n]+',
+                  'targetSdk 35',
+                  content,
+                  count=1
+              )
+          else:
+              content = content.replace(
+                  'defaultConfig {',
+                  'defaultConfig {\n        targetSdk 35',
+                  1
+              )
+
+          path.write_text(content)
+
+          print("========================================")
+          print("ANDROID BUILD CONFIGURATION")
+          print("========================================")
+          print(content)
+          PY
+
+      # --------------------------------------------------
+      # BLUETOOTH PERMISSIONS
+      # --------------------------------------------------
       - name: Add Bluetooth permissions
         working-directory: flutter_app
-        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
+          path = Path(
+              "android/app/src/main/AndroidManifest.xml"
+          )
 
-          if not manifest.exists():
-              raise FileNotFoundError(
-                  "android/app/src/main/AndroidManifest.xml tidak ditemukan"
+          if not path.exists():
+              raise SystemExit(
+                  "ERROR: AndroidManifest.xml tidak ditemukan"
               )
 
-          content = manifest.read_text()
+          content = path.read_text()
 
-          permissions = "\n".join([
-              '    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />',
-              '    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />',
-              '    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />',
-              '    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />',
-              '    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />',
-          ])
+          permissions = """    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+              <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+          """
 
           if "android.permission.BLUETOOTH_SCAN" not in content:
               if "</manifest>" not in content:
-                  raise ValueError("Tag </manifest> tidak ditemukan")
+                  raise SystemExit(
+                      "ERROR: Tag </manifest> tidak ditemukan"
+                  )
 
               content = content.replace(
                   "</manifest>",
-                  permissions + "\n</manifest>",
-                  1,
+                  permissions + "</manifest>",
+                  1
               )
-              manifest.write_text(content)
 
-          print("Bluetooth permissions sudah tersedia.")
+              path.write_text(content)
+
+          print("Bluetooth permissions: OK")
           PY
 
+      # --------------------------------------------------
+      # VALIDATE ANDROID
+      # --------------------------------------------------
       - name: Validate Android configuration
         working-directory: flutter_app
-        shell: bash
         run: |
+          echo "========================================"
+          echo "ANDROID FILE CHECK"
+          echo "========================================"
+
           test -f android/settings.gradle
           test -f android/gradle.properties
           test -f android/gradlew
           test -f android/build.gradle
           test -f android/app/build.gradle
           test -f android/app/src/main/AndroidManifest.xml
-          echo "Android configuration valid."
 
-      - name: Show SDK configuration
+          chmod +x android/gradlew
+
+          echo "All Android files OK."
+
+          echo ""
+          echo "========================================"
+          echo "SDK CONFIGURATION"
+          echo "========================================"
+
+          grep -nE \
+            "compileSdk|minSdk|targetSdk" \
+            android/app/build.gradle || true
+
+      # --------------------------------------------------
+      # GRADLE VERSION
+      # --------------------------------------------------
+      - name: Check Gradle wrapper
         working-directory: flutter_app
-        shell: bash
         run: |
-          grep -nE "compileSdk|minSdk|targetSdk" android/app/build.gradle || true
+          chmod +x android/gradlew
 
+          ./android/gradlew --version
+
+      # --------------------------------------------------
+      # FLUTTER CLEAN
+      # --------------------------------------------------
       - name: Clean Flutter project
         working-directory: flutter_app
-        run: flutter clean
+        run: |
+          flutter clean
 
-      - name: Reinstall Flutter dependencies
+      # --------------------------------------------------
+      # FLUTTER DEPENDENCIES
+      # --------------------------------------------------
+      - name: Get Flutter dependencies
         working-directory: flutter_app
-        run: flutter pub get
+        run: |
+          flutter pub get
 
+      # --------------------------------------------------
+      # BUILD APK
+      # --------------------------------------------------
       - name: Build release APK
         working-directory: flutter_app
-        run: flutter build apk --release --verbose
+        run: |
+          flutter build apk --release
 
+      # --------------------------------------------------
+      # VERIFY APK
+      # --------------------------------------------------
+      - name: Verify APK
+        working-directory: flutter_app
+        run: |
+          APK="build/app/outputs/flutter-apk/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK tidak ditemukan!"
+            exit 1
+          fi
+
+          echo ""
+          echo "========================================"
+          echo "APK BUILD SUCCESS"
+          echo "========================================"
+
+          ls -lh "$APK"
+
+      # --------------------------------------------------
+      # UPLOAD APK
+      # --------------------------------------------------
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
