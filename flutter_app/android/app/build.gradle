@@ -7,7 +7,6 @@ plugins {
 android {
     namespace "com.smartpsu.smart_psu_hp_doctor"
 
-    // Harus eksplisit agar flutter_blue_plus dapat dikonfigurasi
     compileSdk 35
 
     ndkVersion flutter.ndkVersion
@@ -35,7 +34,6 @@ android {
         }
     }
 }
-
 flutter {
     source "../.."
 }
